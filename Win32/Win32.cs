@@ -2,41 +2,11 @@
 using System;
 using System.Runtime.InteropServices;
 
+using static Gridcore.Win32.DwmApi;
+using static Gridcore.Win32.DwmWindowAttribute;
+
 namespace Gridcore.Win32 {
-    internal static class Constants {
-        // size of a device name string
-        public const int CCHDEVICENAME = 32;
-    }
-
-    [Flags]
-    public enum KeyModifiers : uint {
-        None = 0,
-        Alt = 1,
-        Control = 2,
-        Shift = 4,
-        Windows = 8,
-        NoRepeat = 0x4000
-    }
-
-    public enum DWMWINDOWATTRIBUTE : uint {
-        NCRenderingEnabled = 1,
-        NCRenderingPolicy,
-        TransitionsForceDisabled,
-        AllowNCPaint,
-        CaptionButtonBounds,
-        NonClientRtlLayout,
-        ForceIconicRepresentation,
-        Flip3DPolicy,
-        ExtendedFrameBounds,
-        HasIconicBitmap,
-        DisallowPeek,
-        ExcludedFromPeek,
-        Cloak,
-        Cloaked,
-        FreezeRepresentation
-    }
-
-    public enum ShowWindowCommands {
+    public enum CmdShow {
         /// <summary>
         /// Hides the window and activates another window.
         /// </summary>
@@ -56,9 +26,9 @@ namespace Gridcore.Win32 {
         /// Maximizes the specified window.
         /// </summary>
         Maximize = 3, // is this the right value?
-                      /// <summary>
-                      /// Activates the window and displays it as a maximized window.
-                      /// </summary>
+        /// <summary>
+        /// Activates the window and displays it as a maximized window.
+        /// </summary>
         ShowMaximized = 3,
         /// <summary>
         /// Displays a window in its most recent size and position. This value
@@ -107,6 +77,12 @@ namespace Gridcore.Win32 {
         ForceMinimize = 11
     }
 
+    public enum MonitorDefault {
+        Null = 0,
+        Primary = 1,
+        Nearest = 2,
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct Msg {
         IntPtr hwnd;
@@ -121,9 +97,9 @@ namespace Gridcore.Win32 {
     }
 
     public static class User32 {
-        public const int MONITOR_DEFAULTTONULL = 0;
-        public const int MONITOR_DEFAULTTOPRIMARY = 1;
-        public const int MONITOR_DEFAULTTONEAREST = 2;
+        public delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        private const int SWP_NOZORDER = 0x0004;
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr GetForegroundWindow();
@@ -132,28 +108,11 @@ namespace Gridcore.Win32 {
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
-
-        const int SWP_NOZORDER = 0x0004;
-        public static bool SetWindowPos(IntPtr hWnd, Rect position) {
-            ShowWindow(hWnd, ShowWindowCommands.Restore);
-            var margin = Gridcore.CalculateMargin(hWnd);
-            return SetWindowPos(
-                hWnd,
-                IntPtr.Zero,
-                position.Left + margin.Left,
-                position.Top + margin.Top,
-                position.Width + margin.Right - margin.Left,
-                position.Height + margin.Bottom - margin.Top,
-                SWP_NOZORDER);
-        }
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, CmdShow nCmdShow);
 
         [DllImport("user32.dll")]
-        public static extern bool ShowWindow(IntPtr hWnd, ShowWindowCommands nCmdShow);
-
-        public delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
-
-        [DllImport("user32.dll")]
-        public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+        public static extern IntPtr MonitorFromWindow(IntPtr hwnd, MonitorDefault dwFlags);
 
         [DllImport("user32.dll")]
         public static extern IntPtr GetWindowRect(IntPtr hwnd, out Rect lprect);
@@ -180,10 +139,33 @@ namespace Gridcore.Win32 {
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
 
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        public static extern IntPtr GetModuleHandle(string lpModuleName);
+        public static bool SetWindowPos(IntPtr hWnd, Rect position) {
+            ShowWindow(hWnd, CmdShow.Restore);
+            var margin = CalculateMargin(hWnd);
+            return SetWindowPos(
+                hWnd,
+                IntPtr.Zero,
+                position.Left + margin.Left,
+                position.Top + margin.Top,
+                position.Width + margin.Right - margin.Left,
+                position.Height + margin.Bottom - margin.Top,
+                SWP_NOZORDER);
+        }
 
-        [DllImport("dwmapi.dll")]
-        public static extern int DwmGetWindowAttribute(IntPtr hwnd, DWMWINDOWATTRIBUTE dwAttribute, out Rect pvAttribute, int cbAttribute);
+        private static Rect CalculateMargin(IntPtr foregroundWindow) {
+            Rect windowRect;
+            GetWindowRect(foregroundWindow, out windowRect);
+            Rect extendedFrameBounds;
+            DwmGetWindowAttribute(foregroundWindow, ExtendedFrameBounds, out extendedFrameBounds, 4 * 4);
+
+            var margin = new Rect {
+                Left = windowRect.Left - extendedFrameBounds.Left,
+                Right = windowRect.Right - extendedFrameBounds.Right,
+                Top = windowRect.Top - extendedFrameBounds.Top,
+                Bottom = windowRect.Bottom - extendedFrameBounds.Bottom
+            };
+
+            return margin;
+        }
     }
 }

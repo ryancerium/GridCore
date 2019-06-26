@@ -3,227 +3,96 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
 
+using static Gridcore.Win32.DwmApi;
+using static Gridcore.Win32.DwmWindowAttribute;
+using static Gridcore.Win32.Kernel32;
+using static Gridcore.Win32.User32;
+
 namespace Gridcore {
-    public static class GridcoreExt {
-        private static readonly FieldInfo bitArrayMArrayField = typeof(BitArray).GetField("m_array", BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        public static int[] GetArray(this BitArray self) {
-            return (int[]) bitArrayMArrayField.GetValue(self);
-        }
-
-        public static bool BitwiseEquals(this BitArray lhs, BitArray rhs) {
-            return lhs.GetArray().SequenceEqual(rhs.GetArray());
-        }
-
-        public static String PressedKeys(this BitArray self) {
-            var value = "";
-            var intValue = 0;
-            foreach (bool key in self) {
-                if (key && Enum.IsDefined(typeof(VK), intValue)) {
-                    if (value != "")
-                        value += " ";
-
-                    value += (VK) intValue;
-                }
-                ++intValue;
-            }
-            return value;
-        }
-    }
-
-    internal struct HotkeyAction {
-        public BitArray BitArray { get; }
-        public Action Action { get; }
-
-        public HotkeyAction(Action action, params VK[] keys) {
-            BitArray = new BitArray(256);
-            foreach (var key in keys) {
-                BitArray[(int) key] = true;
-            }
-            Action = action;
-        }
-    }
 
     public class Gridcore {
-        public Gridcore() {
-        }
-
-        private static readonly BitArray pressedKeys = new BitArray(256);
+        private static readonly BitArray mPressedKeys = new BitArray(256);
 
         private static List<HotkeyAction> mHotkeyActions = new List<HotkeyAction>();
-        private static bool debugKeys = false;
 
-        public static IntPtr LowLevelKeyboardCallback(int nCode, IntPtr wParam, IntPtr lParam) {
+        private static bool mDebugKeys = false;
+
+        private static IntPtr wmKeyDown = new IntPtr(0x100);
+        private static IntPtr wmKeyUp = new IntPtr(0x101);
+        private static IntPtr wmSysKeyDown = new IntPtr(0x104);
+        private static IntPtr wmSysKeyUp = new IntPtr(0x105);
+
+        private static IntPtr LowLevelKeyboardCallback(int nCode, IntPtr wParam, IntPtr lParam) {
             if (nCode < 0) {
-                return User32.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+                return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
             }
 
-            IntPtr wmKeyDown = new IntPtr(0x100);
-            IntPtr wmKeyUp = new IntPtr(0x101);
-            IntPtr wmSysKeyDown = new IntPtr(0x104);
-            IntPtr wmSysKeyUp = new IntPtr(0x105);
-
-            VK key = (VK) Marshal.ReadInt32(lParam);
+            var key = Marshal.ReadInt32(lParam);
 
             var down = (wParam == wmKeyDown || wParam == wmSysKeyDown);
-            if (debugKeys) {
-                Console.WriteLine(key + (down ? " DOWN" : " UP"));
+            if (mDebugKeys) {
+                Console.WriteLine((VK) key + (down ? " DOWN" : " UP"));
             }
-            pressedKeys[(int) key] = down;
+            mPressedKeys[key] = down;
 
             foreach (var hotkeyAction in mHotkeyActions) {
-                if (hotkeyAction.BitArray.BitwiseEquals(pressedKeys)) {
+                if (hotkeyAction.BitArray.BitwiseEquals(mPressedKeys)) {
                     hotkeyAction.Action();
-                    if (debugKeys) {
-                        Console.WriteLine($"Handled {pressedKeys.PressedKeys()}");
+                    if (mDebugKeys) {
+                        Console.WriteLine($"Handled {mPressedKeys.ToKeyString()}");
                     }
                     return new IntPtr(1);
                 }
             }
-            if (debugKeys) {
-                Console.WriteLine($"Ignored {pressedKeys.PressedKeys()}");
+            if (mDebugKeys) {
+                Console.WriteLine($"Ignored {mPressedKeys.ToKeyString()}");
             }
 
-            return User32.CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
+            return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
         }
 
-        private static MonitorInfoEx GetMonitor(IntPtr foregroundWindow) {
-            var monitor = User32.MonitorFromWindow(foregroundWindow, User32.MONITOR_DEFAULTTOPRIMARY);
-            MonitorInfoEx monitorInfo = new MonitorInfoEx();
-            monitorInfo.Init();
-            User32.GetMonitorInfo(monitor, ref monitorInfo);
-            return monitorInfo;
+        private static Action SetWindowPosAction(Func<Rect, Rect> workAreaToWindowPos) {
+            return () => {
+                var foregroundWindow = GetForegroundWindow();
+                var monitorInfo = new MonitorInfoEx().Init();
+                GetMonitorInfo(MonitorFromWindow(foregroundWindow, MonitorDefault.Primary), ref monitorInfo);
+                SetWindowPos(foregroundWindow, workAreaToWindowPos(monitorInfo.WorkArea));
+            };
         }
 
-        const int SWP_NOZORDER = 0x0004;
+        private static Action TopLeft = SetWindowPosAction(workArea => new Rect(workArea.TopLeft, workArea.Center));
+        private static Action TopRight = SetWindowPosAction(workArea => new Rect(workArea.TopRight, workArea.Center));
+        private static Action BottomLeft = SetWindowPosAction(workArea => new Rect(workArea.BottomLeft, workArea.Center));
+        private static Action BottomRight = SetWindowPosAction(workArea => new Rect(workArea.BottomRight, workArea.Center));
+        private static Action Top = SetWindowPosAction(workArea => new Rect(workArea.TopLeft, new Point(workArea.Right, workArea.VCenter)));
+        private static Action Bottom = SetWindowPosAction(workArea => new Rect(workArea.BottomLeft, new Point(workArea.Right, workArea.VCenter)));
+        private static Action Left = SetWindowPosAction(workArea => new Rect(workArea.TopLeft, new Point(workArea.HCenter, workArea.Bottom)));
+        private static Action Right = SetWindowPosAction(workArea => new Rect(workArea.TopRight, new Point(workArea.HCenter, workArea.Bottom)));
 
-        public static void TopLeft() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var workArea = GetMonitor(foregroundWindow).WorkArea;
-            User32.SetWindowPos(foregroundWindow, new Rect(workArea.TopLeft, workArea.Center));
-        }
-
-        public static void TopRight() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var workArea = GetMonitor(foregroundWindow).WorkArea;
-            User32.SetWindowPos(foregroundWindow, new Rect(workArea.TopRight, workArea.Center));
-        }
-
-        public static void BottomLeft() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var workArea = GetMonitor(foregroundWindow).WorkArea;
-            User32.SetWindowPos(foregroundWindow, new Rect(workArea.BottomLeft, workArea.Center));
-        }
-
-        public static void BottomRight() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var workArea = GetMonitor(foregroundWindow).WorkArea;
-            User32.SetWindowPos(foregroundWindow, new Rect(workArea.BottomRight, workArea.Center));
-        }
-
-        public static void Top() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var monitorInfo = GetMonitor(foregroundWindow);
-            User32.ShowWindow(foregroundWindow, ShowWindowCommands.Restore);
-            var margin = CalculateMargin(foregroundWindow);
-            User32.SetWindowPos(
-                    foregroundWindow,
-                    IntPtr.Zero,
-                    monitorInfo.Left + margin.Left,
-                    monitorInfo.Top + margin.Top,
-                    monitorInfo.Width + margin.Right - margin.Left,
-                    monitorInfo.HalfHeight + margin.Bottom - margin.Top,
-                    SWP_NOZORDER);
-        }
-
-        public static void Bottom() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var monitorInfo = GetMonitor(foregroundWindow);
-            User32.ShowWindow(foregroundWindow, ShowWindowCommands.Restore);
-            var margin = CalculateMargin(foregroundWindow);
-            User32.SetWindowPos(
-                    foregroundWindow,
-                    IntPtr.Zero,
-                    monitorInfo.Left + margin.Left,
-                    monitorInfo.VCenter + margin.Top,
-                    monitorInfo.Width + margin.Right - margin.Left,
-                    monitorInfo.HalfHeight + margin.Bottom - margin.Top,
-                    SWP_NOZORDER);
-        }
-
-        public static void Left() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var monitorInfo = GetMonitor(foregroundWindow);
-            User32.ShowWindow(foregroundWindow, ShowWindowCommands.Restore);
-            var margin = CalculateMargin(foregroundWindow);
-            User32.SetWindowPos(
-                    foregroundWindow,
-                    IntPtr.Zero,
-                    monitorInfo.Left + margin.Left,
-                    monitorInfo.Top + margin.Top,
-                    monitorInfo.HalfWidth + margin.Right - margin.Left,
-                    monitorInfo.Height + margin.Bottom - margin.Top,
-                    SWP_NOZORDER);
-        }
-
-        public static void Right() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var monitorInfo = GetMonitor(foregroundWindow);
-            User32.ShowWindow(foregroundWindow, ShowWindowCommands.Restore);
-            var margin = CalculateMargin(foregroundWindow);
-            User32.SetWindowPos(
-                    foregroundWindow,
-                    IntPtr.Zero,
-                    monitorInfo.HCenter + margin.Left,
-                    monitorInfo.Top + margin.Top,
-                    monitorInfo.HalfWidth + margin.Right - margin.Left,
-                    monitorInfo.Height + margin.Bottom - margin.Top,
-                    SWP_NOZORDER);
-        }
-
-        public static void PrintCurrentMonitor() {
-            var foregroundWindow = User32.GetForegroundWindow();
-            var monitor = User32.MonitorFromWindow(foregroundWindow, User32.MONITOR_DEFAULTTOPRIMARY);
-            MonitorInfoEx monitorInfo = new MonitorInfoEx();
-            monitorInfo.Init();
-            User32.GetMonitorInfo(monitor, ref monitorInfo);
+        private static void PrintCurrentMonitor() {
+            var foregroundWindow = GetForegroundWindow();
+            var monitorInfo = new MonitorInfoEx().Init();
+            GetMonitorInfo(MonitorFromWindow(foregroundWindow, MonitorDefault.Primary), ref monitorInfo);
             Console.WriteLine(monitorInfo.DeviceName + " " + monitorInfo.WorkArea);
         }
 
-        public static void PrintForegroundWindowExtendedFrameBounds() {
-            var foregroundWindow = User32.GetForegroundWindow();
+        private static void PrintForegroundWindowExtendedFrameBounds() {
+            var foregroundWindow = GetForegroundWindow();
             Rect windowRect;
-            User32.GetWindowRect(foregroundWindow, out windowRect);
+            GetWindowRect(foregroundWindow, out windowRect);
             Rect extendedFrameBounds;
-            User32.DwmGetWindowAttribute(foregroundWindow, DWMWINDOWATTRIBUTE.ExtendedFrameBounds, out extendedFrameBounds, 4 * 4);
+            DwmGetWindowAttribute(foregroundWindow, ExtendedFrameBounds, out extendedFrameBounds, 4 * 4);
 
-            Console.WriteLine($"Window RECT: {windowRect} Extended Frame: {extendedFrameBounds}");
-        }
-
-        public static Rect CalculateMargin(IntPtr foregroundWindow) {
-            Rect windowRect;
-            User32.GetWindowRect(foregroundWindow, out windowRect);
-            Rect extendedFrameBounds;
-            User32.DwmGetWindowAttribute(foregroundWindow, DWMWINDOWATTRIBUTE.ExtendedFrameBounds, out extendedFrameBounds, 4 * 4);
-
-            var margin = new Rect {
-                Left = windowRect.Left - extendedFrameBounds.Left,
-                Right = windowRect.Right - extendedFrameBounds.Right,
-                Top = windowRect.Top - extendedFrameBounds.Top,
-                Bottom = windowRect.Bottom - extendedFrameBounds.Bottom
-            };
-            Console.WriteLine(margin);
-            return margin;
+            Console.WriteLine($"Window: {windowRect} Extended Frame: {extendedFrameBounds}");
         }
 
         public static void Main(string[] args) {
             Console.WriteLine("Press a hotkey!");
             mHotkeyActions = new List<HotkeyAction>() {
                 new HotkeyAction(PrintForegroundWindowExtendedFrameBounds, VK.LeftWindows, VK.LeftControl, VK.N0),
-                new HotkeyAction(() => debugKeys = !debugKeys, VK.LeftWindows, VK.LeftControl, VK.K),
+                new HotkeyAction(() => mDebugKeys = !mDebugKeys, VK.LeftWindows, VK.LeftControl, VK.K),
                 new HotkeyAction(TopLeft, VK.LeftWindows, VK.LeftControl, VK.N1),
                 new HotkeyAction(TopLeft, VK.LeftWindows, VK.Numpad7),
                 new HotkeyAction(TopRight, VK.LeftWindows, VK.LeftControl, VK.N2),
@@ -244,15 +113,14 @@ namespace Gridcore {
 
             using (var curProcess = Process.GetCurrentProcess()) {
                 using (var curModule = curProcess.MainModule) {
-                    User32.SetWindowsHookEx(13, LowLevelKeyboardCallback, User32.GetModuleHandle(curModule.ModuleName), 0);
+                    SetWindowsHookEx(13, LowLevelKeyboardCallback, GetModuleHandle(curModule.ModuleName), 0);
                 }
             }
 
-
             Msg msg;
-            while (User32.GetMessage(out msg, IntPtr.Zero, 0, 0) > 0) {
-                User32.TranslateMessage(ref msg);
-                User32.DispatchMessage(ref msg);
+            while (GetMessage(out msg, IntPtr.Zero, 0, 0) > 0) {
+                TranslateMessage(ref msg);
+                DispatchMessage(ref msg);
             }
         }
     }

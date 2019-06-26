@@ -1,8 +1,6 @@
 using System.Runtime.InteropServices;
-using Gridcore.Win32;
 
-namespace Gridcore.Win32
-{
+namespace Gridcore.Win32 {
     /// <summary>
     /// The MONITORINFOEX structure contains information about a display monitor.
     /// The GetMonitorInfo function stores information into a MONITORINFOEX structure or a MONITORINFO structure.
@@ -10,8 +8,10 @@ namespace Gridcore.Win32
     /// for the display monitor.
     /// </summary>
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    public struct MonitorInfoEx
-    {
+    public struct MonitorInfoEx {
+        // size of a device name string
+        private const int CCHDEVICENAME = 32;
+
         /// <summary>
         /// The size, in bytes, of the structure. Set this member to sizeof(MONITORINFOEX) (72) before calling the GetMonitorInfo function.
         /// Doing so lets the function determine the type of structure you are passing to it.
@@ -44,24 +44,13 @@ namespace Gridcore.Win32
         /// A string that specifies the device name of the monitor being used. Most applications have no use for a display monitor name,
         /// and so can save some bytes by using a MONITORINFO structure.
         /// </summary>
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = Constants.CCHDEVICENAME)]
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHDEVICENAME)]
         public string DeviceName;
 
-        public void Init()
-        {
-            this.Size = 40 + 2 * Constants.CCHDEVICENAME;
+        public MonitorInfoEx Init() {
+            this.Size = 40 + 2 * CCHDEVICENAME;
             this.DeviceName = string.Empty;
+            return this;
         }
-
-        public int Width => WorkArea.Width;
-        public int Height => WorkArea.Height;
-        public int Left => WorkArea.Left;
-        public int Right => WorkArea.Right;
-        public int Top => WorkArea.Top;
-        public int Bottom => WorkArea.Bottom;
-        public int HalfWidth => Width / 2;
-        public int HalfHeight => Height / 2;
-        public int HCenter => Left + HalfWidth;
-        public int VCenter => Top + HalfHeight;
     }
 }

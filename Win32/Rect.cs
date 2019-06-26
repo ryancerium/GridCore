@@ -41,9 +41,7 @@ namespace Gridcore.Win32 {
             Bottom = Math.Max(p1.Y, p2.Y);
         }
 
-        public override string ToString() {
-            return $"L:{Left} T:{Top} R:{Right} B:{Bottom}";
-        }
+        public override string ToString() => $"L:{Left} T:{Top} R:{Right} B:{Bottom}";
 
         public int Width => Right - Left;
         public int Height => Bottom - Top;
