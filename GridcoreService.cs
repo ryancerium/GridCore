@@ -16,6 +16,7 @@ namespace Gridcore {
         private static readonly BitArray mPressedKeys = new BitArray(256);
 
         private static List<HotkeyAction> mHotkeyActions = new List<HotkeyAction>();
+        private static List<MonitorInfoEx> mMonitors = new List<MonitorInfoEx>();
 
         private static bool mDebugKeys = false;
 
@@ -53,6 +54,14 @@ namespace Gridcore {
             return CallNextHookEx(IntPtr.Zero, nCode, wParam, lParam);
         }
 
+        private static bool EnumDisplayMonitorsCallback(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect lprcMonitor, IntPtr dwData) {
+            MonitorInfoEx monitorInfo = new MonitorInfoEx().Init();
+            GetMonitorInfo(hMonitor, ref monitorInfo);
+            mMonitors.Add(monitorInfo);
+            Console.WriteLine($"{monitorInfo.DeviceName}: {monitorInfo.WorkArea}");
+            return true;
+        }
+
         private static Action SetWindowPosAction(Func<Rect, Rect> workAreaToWindowPos) {
             return () => {
                 var foregroundWindow = GetForegroundWindow();
@@ -78,6 +87,25 @@ namespace Gridcore {
             Console.WriteLine(monitorInfo.DeviceName + " " + monitorInfo.WorkArea);
         }
 
+        private static void MoveToNextMonitor() {
+            mMonitors.Clear();
+            EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, EnumDisplayMonitorsCallback, IntPtr.Zero);
+            mMonitors.Sort();
+
+            var foregroundWindow = GetForegroundWindow();
+            var monitorInfo = new MonitorInfoEx().Init();
+            GetMonitorInfo(MonitorFromWindow(foregroundWindow, MonitorDefault.Primary), ref monitorInfo);
+
+            var i = mMonitors.IndexOf(monitorInfo) + 1;
+            if (i == mMonitors.Count) {
+                i = 0;
+            }
+            var workArea = mMonitors[i].WorkArea;
+            var windowPos = new Rect(workArea.TopLeft, workArea.Center);
+            SetWindowPos(foregroundWindow, windowPos, 0);
+            SetCursorPos(windowPos.Center.X, windowPos.Center.Y);
+        }
+
         private static void PrintForegroundWindowExtendedFrameBounds() {
             var foregroundWindow = GetForegroundWindow();
             Rect windowRect;
@@ -93,6 +121,7 @@ namespace Gridcore {
             mHotkeyActions = new List<HotkeyAction>() {
                 new HotkeyAction(PrintForegroundWindowExtendedFrameBounds, VK.LeftWindows, VK.LeftControl, VK.N0),
                 new HotkeyAction(() => mDebugKeys = !mDebugKeys, VK.LeftWindows, VK.LeftControl, VK.K),
+                new HotkeyAction(MoveToNextMonitor, VK.LeftWindows, VK.Numpad5),
                 new HotkeyAction(TopLeft, VK.LeftWindows, VK.LeftControl, VK.N1),
                 new HotkeyAction(TopLeft, VK.LeftWindows, VK.Numpad7),
                 new HotkeyAction(TopRight, VK.LeftWindows, VK.LeftControl, VK.N2),

@@ -98,11 +98,40 @@ namespace Gridcore.Win32 {
 
     public static class User32 {
         public delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+        public delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect lprcMonitor, IntPtr dwData);
 
+        private const int SWP_NOSIZE = 0x0001;
         private const int SWP_NOZORDER = 0x0004;
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr DispatchMessage([In] ref Msg lpmsg);
+
+        [DllImport("user32.dll")]
+        public static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc lpfnEnum, IntPtr dwData);
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        public static extern int GetMessage(out Msg lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfoEx lpmi);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr GetWindowRect(IntPtr hwnd, out Rect lprect);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr MonitorFromWindow(IntPtr hwnd, MonitorDefault dwFlags);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetCursorPos(int X, int Y);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -112,34 +141,17 @@ namespace Gridcore.Win32 {
         public static extern bool ShowWindow(IntPtr hWnd, CmdShow nCmdShow);
 
         [DllImport("user32.dll")]
-        public static extern IntPtr MonitorFromWindow(IntPtr hwnd, MonitorDefault dwFlags);
-
-        [DllImport("user32.dll")]
-        public static extern IntPtr GetWindowRect(IntPtr hwnd, out Rect lprect);
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfoEx lpmi);
-
-        [DllImport("user32.dll")]
-        public static extern int GetMessage(out Msg lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
-
-        [DllImport("user32.dll")]
         public static extern bool TranslateMessage([In] ref Msg lpMsg);
-
-        [DllImport("user32.dll")]
-        public static extern IntPtr DispatchMessage([In] ref Msg lpmsg);
-
-        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, IntPtr hMod, uint dwThreadId);
 
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool UnhookWindowsHookEx(IntPtr hhk);
 
-        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
-
         public static bool SetWindowPos(IntPtr hWnd, Rect position) {
+            return SetWindowPos(hWnd, position, SWP_NOZORDER);
+        }
+
+        public static bool SetWindowPos(IntPtr hWnd, Rect position, uint flags) {
             ShowWindow(hWnd, CmdShow.Restore);
             var margin = CalculateMargin(hWnd);
             return SetWindowPos(
@@ -149,7 +161,7 @@ namespace Gridcore.Win32 {
                 position.Top + margin.Top,
                 position.Width + margin.Right - margin.Left,
                 position.Height + margin.Bottom - margin.Top,
-                SWP_NOZORDER);
+                flags);
         }
 
         private static Rect CalculateMargin(IntPtr foregroundWindow) {

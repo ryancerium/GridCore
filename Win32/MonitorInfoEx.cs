@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.InteropServices;
 
 namespace Gridcore.Win32 {
@@ -8,7 +9,7 @@ namespace Gridcore.Win32 {
     /// for the display monitor.
     /// </summary>
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    public struct MonitorInfoEx {
+    public struct MonitorInfoEx : IComparable<MonitorInfoEx> {
         // size of a device name string
         private const int CCHDEVICENAME = 32;
 
@@ -46,6 +47,11 @@ namespace Gridcore.Win32 {
         /// </summary>
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = CCHDEVICENAME)]
         public string DeviceName;
+
+        public int CompareTo(MonitorInfoEx other) =>
+            WorkArea.Left != other.WorkArea.Left
+                ? WorkArea.Left.CompareTo(other.WorkArea.Left)
+                : WorkArea.Top.CompareTo(other.WorkArea.Top);
 
         public MonitorInfoEx Init() {
             this.Size = 40 + 2 * CCHDEVICENAME;
